@@ -36,5 +36,24 @@ The diffs can be found here:
     - Add 'name' field
     - We don't add contact fields if they don't exist
     - Don't add telephone info
+- removed id attribute from container element if container contains a parent attribute
+- upcasing initial string in label type for container
+- provisional commit
+- fixed thumbnails. Moved dao elements outside of did element
+- fixed audatt references
+- fixed internal audience for dao, I believe
+- reading use statement from the config yml file to get the right string
+- fixed container 3 bug
+- added check for existence of instances with containers
+- modifying to make it compatible with 2.2. Containers show up but not daos
+- fixed namespace, ending tag, and dao use issues
+- added parent attribute to the right sub containers
+- updating language handeling
+- adding fragments to lang_materials
+- fixing fragments to lang_materials
+- removing blocking of all unpublised elements
+- forcing ns2 namespace on all extref elements
 
- 
+## Conclusion ##
+
+
