@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>~/Untitled.html</title>
+<meta name="Generator" content="Vim/8.2">
+<meta name="plugin-version" content="vim8.1_v2">
+<meta name="syntax" content="diff">
+<meta name="settings" content="use_css,pre_wrap,no_foldcolumn,prevent_copy=,use_input_for_pc=fallback">
+<meta name="colorscheme" content="none">
+<style>
+<!--
+pre { white-space: pre-wrap; font-family: monospace; color: #000000; background-color: #ffffff; }
+body { font-family: monospace; color: #000000; background-color: #ffffff; }
+* { font-size: 1em; }
+.Type { color: #008000; }
+.Special { color: #c000c0; }
+.Identifier { color: #008080; }
+.Statement { color: #804000; }
+-->
+</style>
+</head>
+<body>
+<pre id='vimCodeElement'>
+<span class="Type">--- ead.rb	2021-07-15 02:50:11.058221983 -0400</span>
+<span class="Type">+++ nyu_ead_exporter.rb	2021-07-21 20:02:56.593290941 -0400</span>
+<span class="Statement">@@ -1,4 +1,3 @@</span>
+<span class="Special">-# encoding: utf-8</span>
+ require 'nokogiri'
+ require 'securerandom'
+ require 'cgi'
+<span class="Statement">@@ -104,9 +103,9 @@</span>
+   # <a href="https://www.xml.com/pub/a/2001/07/25/namingparts.html">https://www.xml.com/pub/a/2001/07/25/namingparts.html</a>
+   # <a href="https://razzed.com/2009/01/30/valid-characters-in-attribute-names-in-htmlxml/">https://razzed.com/2009/01/30/valid-characters-in-attribute-names-in-htmlxml/</a>
+
+<span class="Special">-  def add_xlink_prefix(content)</span>
+<span class="Identifier">+  def add_ns2_prefix(content)</span>
+     %w{ actuate arcrole entityref from href id linktype parent role show target title to xpointer }.each do |xa|
+<span class="Special">-      content.gsub!(/ #{xa}=/) {|match| &quot; xlink:#{match.strip}&quot;} if content =~ / #{xa}=/</span>
+<span class="Identifier">+      content.gsub!(/ #{xa}=/) {|match| &quot; ns2:#{match.strip}&quot;} if content =~ / #{xa}=/</span>
+     end
+     content
+   end
+<span class="Statement">@@ -130,7 +129,7 @@</span>
+     # xlink added so only do this processing if the element is there
+     # attribute check is inside the add_xlink_prefix method
+     xlink_eles = %w{ arc archref bibref extptr extptrloc extref extrefloc linkgrp ptr ptrloc ref refloc resource title }
+<span class="Special">-    content = add_xlink_prefix(content) if xlink_eles.any? { |word| content =~ /&lt;#{word}\s/ }</span>
+<span class="Identifier">+    content = add_ns2_prefix(content) if xlink_eles.any? { |word| content =~ /&lt;#{word}\s/ }</span>
+
+     begin
+       if ASpaceExport::Utils.has_html?(content)
+<span class="Statement">@@ -144,6 +143,7 @@</span>
+   end
+
+   def stream(data)
+<span class="Identifier">+    @xlink_namespace = &quot;ns2&quot;</span>
+     @stream_handler = ASpaceExport::StreamHandler.new
+     @fragments = ASpaceExport::RawXMLHandler.new
+     @include_unpublished = data.include_unpublished?
+<span class="Statement">@@ -152,10 +152,12 @@</span>
+     @id_prefix = I18n.t('archival_object.ref_id_export_prefix', :default =&gt; 'aspace_')
+
+     doc = Nokogiri::XML::Builder.new(:encoding =&gt; &quot;UTF-8&quot;) do |xml|
+<span class="Identifier">+      begin</span>
+<span class="Identifier">+</span>
+       ead_attributes = {
+         'xmlns:xsi' =&gt; '<a href="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</a>',
+         'xsi:schemaLocation' =&gt; 'urn:isbn:1-931666-22-9 <a href="http://www.loc.gov/ead/ead.xsd">http://www.loc.gov/ead/ead.xsd</a>',
+<span class="Special">-        'xmlns:xlink' =&gt; '<a href="http://www.w3.org/1999/xlink">http://www.w3.org/1999/xlink</a>'</span>
+<span class="Identifier">+        'xmlns:ns2' =&gt; '<a href="http://www.w3.org/1999/xlink">http://www.w3.org/1999/xlink</a>'</span>
+       }
+
+       if data.publish === false
+<span class="Statement">@@ -170,12 +172,19 @@</span>
+ })
+
+         atts = {:level =&gt; data.level, :otherlevel =&gt; data.other_level}
+<span class="Identifier">+</span>
+         atts.reject! {|k, v| v.nil?}
+
+         xml.archdesc(atts) {
+
+<span class="Identifier">+</span>
+<span class="Identifier">+</span>
+           xml.did {
+
+<span class="Identifier">+                    if (languages = data.lang_materials)</span>
+<span class="Identifier">+                      serialize_languages(languages, xml, @fragments)</span>
+<span class="Identifier">+                    end</span>
+<span class="Identifier">+</span>
+             if (val = data.repo.name)
+               xml.repository {
+                 xml.corpname { sanitize_mixed_content(val, xml, @fragments) }
+<span class="Statement">@@ -202,14 +211,12 @@</span>
+
+             serialize_did_notes(data, xml, @fragments)
+
+<span class="Special">-            if (languages = data.lang_materials)</span>
+<span class="Special">-              serialize_languages(languages, xml, @fragments)</span>
+<span class="Special">-            end</span>
+
+             data.instances_with_sub_containers.each do |instance|
+               serialize_container(instance, xml, @fragments)
+             end
+
+<span class="Identifier">+</span>
+             EADSerializer.run_serialize_step(data, xml, @fragments, :did)
+
+           }# &lt;/did&gt;
+<span class="Statement">@@ -240,235 +247,132 @@</span>
+           }
+         }
+       }
+<span class="Special">-    end</span>
+<span class="Special">-    doc.doc.root.add_namespace nil, 'urn:isbn:1-931666-22-9'</span>
+
+<span class="Special">-    Enumerator.new do |y|</span>
+<span class="Special">-      @stream_handler.stream_out(doc, @fragments, y)</span>
+<span class="Special">-    end</span>
+<span class="Identifier">+            rescue =&gt; e</span>
+<span class="Identifier">+              xml.text  &quot;ASPACE EXPORT ERROR : YOU HAVE A PROBLEM WITH YOUR EXPORT OF YOUR RESOURCE. THE FOLLOWING INFORMATION MAY HELP:\n</span>
+<span class="Identifier">+              MESSAGE: #{e.message.inspect}  \n</span>
+<span class="Identifier">+              TRACE: #{e.backtrace.inspect} \n &quot;</span>
+   end
+
+<span class="Special">-  # this extracts &lt;head&gt; content and returns it. optionally, you can provide a</span>
+<span class="Special">-  # backup text node that will be returned if there is no &lt;head&gt; nodes in the</span>
+<span class="Special">-  # content</span>
+<span class="Special">-  def extract_head_text(content, backup = &quot;&quot;)</span>
+<span class="Special">-    content ||= &quot;&quot;</span>
+<span class="Special">-    match = content.strip.match(/&lt;head( [^&lt;&gt;]+)?&gt;(.+?)&lt;\/head&gt;/)</span>
+<span class="Special">-    if match.nil? # content has no head so we return it as it</span>
+<span class="Special">-      return [content, backup ]</span>
+<span class="Special">-    else</span>
+<span class="Special">-      [ content.gsub(match.to_a.first, ''), match.to_a.last]</span>
+<span class="Special">-    end</span>
+<span class="Special">-  end</span>
+<span class="Special">-</span>
+<span class="Special">-  def serialize_child(data, xml, fragments, c_depth = 1)</span>
+<span class="Special">-    return if data[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-    return if data[&quot;suppressed&quot;] === true</span>
+<span class="Special">-</span>
+<span class="Special">-    tag_name = @use_numbered_c_tags ? :&quot;c#{c_depth.to_s.rjust(2, '0')}&quot; : :c</span>
+<span class="Special">-</span>
+<span class="Special">-    atts = {:level =&gt; data.level, :otherlevel =&gt; data.other_level, :id =&gt; prefix_id(data.ref_id)}</span>
+
+<span class="Special">-    if data.publish === false</span>
+<span class="Special">-      atts[:audience] = 'internal'</span>
+<span class="Special">-    end</span>
+
+<span class="Special">-    atts.reject! {|k, v| v.nil?}</span>
+<span class="Special">-    xml.send(tag_name, atts) {</span>
+<span class="Special">-</span>
+<span class="Special">-      xml.did {</span>
+<span class="Special">-        if (val = data.title)</span>
+<span class="Special">-          xml.unittitle { sanitize_mixed_content( val, xml, fragments) }</span>
+         end
+<span class="Identifier">+          doc.doc.root.add_namespace nil, 'urn:isbn:1-931666-22-9'</span>
+
+<span class="Special">-        if AppConfig[:arks_enabled]</span>
+<span class="Special">-          ark_url = ArkName::get_ark_url(data.id, :archival_object)</span>
+<span class="Special">-          if ark_url</span>
+<span class="Special">-            xml.unitid {</span>
+<span class="Special">-              xml.extref ({&quot;xlink:href&quot; =&gt; ark_url,</span>
+<span class="Special">-                           &quot;xlink:actuate&quot; =&gt; &quot;onLoad&quot;,</span>
+<span class="Special">-                           &quot;xlink:show&quot; =&gt; &quot;new&quot;,</span>
+<span class="Special">-                           &quot;xlink:type&quot; =&gt; &quot;simple&quot;</span>
+<span class="Special">-                          }) { xml.text 'Archival Resource Key' }</span>
+<span class="Special">-            }</span>
+<span class="Special">-          end</span>
+<span class="Identifier">+          Enumerator.new do |y|</span>
+<span class="Identifier">+            @stream_handler.stream_out(doc, @fragments, y)</span>
+         end
+
+<span class="Special">-        if !data.component_id.nil? &amp;&amp; !data.component_id.empty?</span>
+<span class="Special">-          xml.unitid data.component_id</span>
+<span class="Special">-        end</span>
+
+<span class="Special">-        if @include_unpublished</span>
+<span class="Special">-          data.external_ids.each do |exid|</span>
+<span class="Special">-            xml.unitid ({ &quot;audience&quot; =&gt; &quot;internal&quot;, &quot;type&quot; =&gt; exid['source'], &quot;identifier&quot; =&gt; exid['external_id']}) { xml.text exid['external_id']}</span>
+<span class="Special">-          end</span>
+         end
+
+<span class="Special">-        serialize_origination(data, xml, fragments)</span>
+<span class="Special">-        serialize_extents(data, xml, fragments)</span>
+<span class="Special">-        serialize_dates(data, xml, fragments)</span>
+<span class="Special">-        serialize_did_notes(data, xml, fragments)</span>
+<span class="Identifier">+        def serialize_did_notes(data, xml, fragments)</span>
+<span class="Identifier">+          data.notes.each do |note|</span>
+<span class="Identifier">+            next if note[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Identifier">+            next unless data.did_note_types.include?(note['type']) # &amp;&amp; note[&quot;publish&quot;] == true)</span>
+
+<span class="Special">-        if (languages = data.lang_materials)</span>
+<span class="Special">-          serialize_languages(languages, xml, fragments)</span>
+<span class="Special">-        end</span>
+<span class="Identifier">+            #audatt = note[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Identifier">+            content = ASpaceExport::Utils.extract_note_text(note, @include_unpublished)</span>
+
+<span class="Special">-        EADSerializer.run_serialize_step(data, xml, fragments, :did)</span>
+<span class="Identifier">+            att = { :id =&gt; prefix_id(note['persistent_id']) }.reject {|k,v| v.nil? || v.empty? || v == &quot;null&quot; }</span>
+<span class="Identifier">+            att ||= {}</span>
+
+<span class="Special">-        data.instances_with_sub_containers.each do |instance|</span>
+<span class="Special">-          serialize_container(instance, xml, @fragments)</span>
+<span class="Identifier">+            case note['type']</span>
+<span class="Identifier">+            when 'dimensions', 'physfacet'</span>
+<span class="Identifier">+              #xml.physdesc(audatt) {</span>
+<span class="Identifier">+              xml.physdesc {</span>
+<span class="Identifier">+                generate_xml(content, xml, fragments, note['type'], att)</span>
+<span class="Identifier">+              }</span>
+<span class="Identifier">+            else</span>
+<span class="Identifier">+              #att.merge!(audatt)</span>
+<span class="Identifier">+              if note['type'] == 'langmaterial'</span>
+<span class="Identifier">+                label = { :label =&gt; &quot;Language of Materials note&quot; }</span>
+<span class="Identifier">+                att.merge!(label)</span>
+         end
+<span class="Special">-</span>
+<span class="Special">-        if @include_daos</span>
+<span class="Special">-          data.instances_with_digital_objects.each do |instance|</span>
+<span class="Special">-            serialize_digital_object(instance['digital_object']['_resolved'], xml, fragments)</span>
+<span class="Identifier">+              generate_xml(content, xml, fragments, note['type'], att)</span>
+           end
+         end
+<span class="Special">-      }</span>
+<span class="Special">-</span>
+<span class="Special">-      serialize_nondid_notes(data, xml, fragments)</span>
+<span class="Special">-</span>
+<span class="Special">-      serialize_bibliographies(data, xml, fragments)</span>
+<span class="Special">-</span>
+<span class="Special">-      serialize_indexes(data, xml, fragments)</span>
+<span class="Special">-</span>
+<span class="Special">-      serialize_controlaccess(data, xml, fragments)</span>
+<span class="Special">-</span>
+<span class="Special">-      EADSerializer.run_serialize_step(data, xml, fragments, :archdesc)</span>
+<span class="Special">-</span>
+<span class="Special">-      data.children_indexes.each do |i|</span>
+<span class="Special">-        xml.text(</span>
+<span class="Special">-          @stream_handler.buffer {|xml, new_fragments|</span>
+<span class="Special">-            serialize_child(data.get_child(i), xml, new_fragments, c_depth + 1)</span>
+<span class="Special">-          }</span>
+<span class="Special">-        )</span>
+<span class="Special">-      end</span>
+<span class="Special">-    }</span>
+   end
+
+<span class="Special">-</span>
+<span class="Special">-  def serialize_origination(data, xml, fragments)</span>
+<span class="Special">-    unless data.creators_and_sources.nil?</span>
+<span class="Special">-      data.creators_and_sources.each do |link|</span>
+<span class="Special">-        agent = link['_resolved']</span>
+<span class="Special">-        published = agent['publish'] === true</span>
+<span class="Special">-</span>
+<span class="Special">-        next if !published &amp;&amp; !@include_unpublished</span>
+<span class="Special">-</span>
+<span class="Special">-        link['role'] == 'creator' ? role = link['role'].capitalize : role = link['role']</span>
+<span class="Special">-        relator = link['relator']</span>
+<span class="Special">-        sort_name = agent['display_name']['sort_name']</span>
+<span class="Special">-        rules = agent['display_name']['rules']</span>
+<span class="Special">-        source = agent['display_name']['source']</span>
+<span class="Special">-        authfilenumber = agent['display_name']['authority_id']</span>
+<span class="Special">-        node_name = case agent['agent_type']</span>
+<span class="Special">-                    when 'agent_person'; 'persname'</span>
+<span class="Special">-                    when 'agent_family'; 'famname'</span>
+<span class="Special">-                    when 'agent_corporate_entity'; 'corpname'</span>
+<span class="Special">-                    when 'agent_software'; 'name'</span>
+<span class="Special">-                    end</span>
+<span class="Special">-</span>
+<span class="Special">-        origination_attrs = {:label =&gt; role}</span>
+<span class="Special">-        origination_attrs[:audience] = 'internal' unless published</span>
+<span class="Special">-        xml.origination(origination_attrs) {</span>
+<span class="Special">-          atts = {:role =&gt; relator, :source =&gt; source, :rules =&gt; rules, :authfilenumber =&gt; authfilenumber}</span>
+<span class="Special">-          atts.reject! {|k, v| v.nil?}</span>
+<span class="Special">-</span>
+<span class="Special">-          xml.send(node_name, atts) {</span>
+<span class="Special">-            sanitize_mixed_content(sort_name, xml, fragments )</span>
+<span class="Special">-          }</span>
+<span class="Identifier">+        def generate_xml(content, xml, fragments, node, attributes)</span>
+<span class="Identifier">+          xml.send(node, attributes) {</span>
+<span class="Identifier">+            sanitize_mixed_content(content, xml, fragments,ASpaceExport::Utils.include_p?(node))</span>
+         }
+       end
+<span class="Special">-    end</span>
+<span class="Identifier">+</span>
+<span class="Identifier">+        def customize_ead_data(custom_text,data)</span>
+<span class="Identifier">+          custom_text + data</span>
+   end
+
+<span class="Special">-  def serialize_controlaccess(data, xml, fragments)</span>
+<span class="Special">-    if (data.controlaccess_subjects.length + data.controlaccess_linked_agents.length) &gt; 0</span>
+<span class="Special">-      xml.controlaccess {</span>
+<span class="Special">-        data.controlaccess_subjects.each do |node_data|</span>
+<span class="Special">-          xml.send(node_data[:node_name], node_data[:atts]) {</span>
+<span class="Special">-            sanitize_mixed_content( node_data[:content], xml, fragments, ASpaceExport::Utils.include_p?(node_data[:node_name]) )</span>
+<span class="Special">-          }</span>
+<span class="Identifier">+        def upcase_initial_char(string)</span>
+<span class="Identifier">+          reformat_string = string</span>
+<span class="Identifier">+          get_match = /(^[a-z])(.*)/.match(string)</span>
+<span class="Identifier">+          if get_match</span>
+<span class="Identifier">+            reformat_string = get_match[1].upcase + get_match[2]</span>
+<span class="Identifier">+          end</span>
+<span class="Identifier">+          reformat_string</span>
+         end
+
+<span class="Special">-        data.controlaccess_linked_agents.each do |node_data|</span>
+<span class="Special">-          xml.send(node_data[:node_name], node_data[:atts]) {</span>
+<span class="Special">-            sanitize_mixed_content( node_data[:content], xml, fragments, ASpaceExport::Utils.include_p?(node_data[:node_name]) )</span>
+<span class="Identifier">+        def serialize_nondid_notes(data, xml, fragments)</span>
+<span class="Identifier">+          data.notes.each do |note|</span>
+<span class="Identifier">+            next if note[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Identifier">+            next if note['internal']</span>
+<span class="Identifier">+            next if note['type'].nil?</span>
+<span class="Identifier">+            next unless data.archdesc_note_types.include?(note['type']) # and note[&quot;publish&quot;] == true)</span>
+<span class="Identifier">+            if note['type'] == 'legalstatus'</span>
+<span class="Identifier">+              xml.accessrestrict {</span>
+<span class="Identifier">+                serialize_note_content(note, xml, fragments)</span>
+           }
+<span class="Identifier">+            else</span>
+<span class="Identifier">+              serialize_note_content(note, xml, fragments)</span>
+         end
+<span class="Special">-      } #&lt;/controlaccess&gt;</span>
+     end
+   end
+
+<span class="Special">-  def serialize_subnotes(subnotes, xml, fragments, include_p = true)</span>
+<span class="Special">-    subnotes.each do |sn|</span>
+<span class="Special">-      next if sn[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-</span>
+<span class="Special">-      audatt = sn[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Special">-</span>
+<span class="Special">-      title = sn['title']</span>
+<span class="Identifier">+        #not sure if I should do this</span>
+<span class="Identifier">+        def serialize_did_notes(data, xml, fragments)</span>
+<span class="Identifier">+          data.notes.each do |note|</span>
+<span class="Identifier">+            next if note[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Identifier">+            next unless data.did_note_types.include?(note['type']) # and note[&quot;publish&quot;] == true)</span>
+
+<span class="Special">-      case sn['jsonmodel_type']</span>
+<span class="Special">-      when 'note_text'</span>
+<span class="Special">-        sanitize_mixed_content(sn['content'], xml, fragments, include_p )</span>
+<span class="Special">-      when 'note_chronology'</span>
+<span class="Special">-        xml.chronlist(audatt) {</span>
+<span class="Special">-          xml.head { sanitize_mixed_content(title, xml, fragments) } if title</span>
+<span class="Identifier">+            audatt = note[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Identifier">+            content = ASpaceExport::Utils.extract_note_text(note, @include_unpublished)</span>
+
+<span class="Special">-          sn['items'].each do |item|</span>
+<span class="Special">-            xml.chronitem {</span>
+<span class="Special">-              if (val = item['event_date'])</span>
+<span class="Special">-                xml.date { sanitize_mixed_content( val, xml, fragments) }</span>
+<span class="Special">-              end</span>
+<span class="Special">-              if item['events'] &amp;&amp; !item['events'].empty?</span>
+<span class="Special">-                xml.eventgrp {</span>
+<span class="Special">-                  item['events'].each do |event|</span>
+<span class="Special">-                    xml.event { sanitize_mixed_content(event, xml, fragments) }</span>
+<span class="Special">-                  end</span>
+<span class="Special">-                }</span>
+<span class="Special">-              end</span>
+<span class="Special">-            }</span>
+<span class="Special">-          end</span>
+<span class="Special">-        }</span>
+<span class="Special">-      when 'note_orderedlist'</span>
+<span class="Special">-        atts = {:type =&gt; 'ordered', :numeration =&gt; sn['enumeration']}.reject {|k, v| v.nil? || v.empty? || v == &quot;null&quot; }.merge(audatt)</span>
+<span class="Special">-        xml.list(atts) {</span>
+<span class="Special">-          xml.head { sanitize_mixed_content(title, xml, fragments) } if title</span>
+<span class="Identifier">+            att = { :id =&gt; prefix_id(note['persistent_id']) }.reject {|k,v| v.nil? || v.empty? || v == &quot;null&quot; }</span>
+<span class="Identifier">+            att ||= {}</span>
+
+<span class="Special">-          sn['items'].each do |item|</span>
+<span class="Special">-            xml.item { sanitize_mixed_content(item, xml, fragments)}</span>
+<span class="Special">-          end</span>
+<span class="Identifier">+            case note['type']</span>
+<span class="Identifier">+            when 'dimensions', 'physfacet'</span>
+<span class="Identifier">+              xml.physdesc(audatt) {</span>
+<span class="Identifier">+              #xml.physdesc {</span>
+<span class="Identifier">+                xml.send(note['type'], att) {</span>
+<span class="Identifier">+                  sanitize_mixed_content( content, xml, fragments, ASpaceExport::Utils.include_p?(note['type'])  )</span>
+         }
+<span class="Special">-      when 'note_definedlist'</span>
+<span class="Special">-        xml.list({:type =&gt; 'deflist'}.merge(audatt)) {</span>
+<span class="Special">-          xml.head { sanitize_mixed_content(title, xml, fragments) } if title</span>
+<span class="Special">-</span>
+<span class="Special">-          sn['items'].each do |item|</span>
+<span class="Special">-            xml.defitem {</span>
+<span class="Special">-              xml.label { sanitize_mixed_content(item['label'], xml, fragments) } if item['label']</span>
+<span class="Special">-              xml.item { sanitize_mixed_content(item['value'], xml, fragments )} if item['value']</span>
+             }
+<span class="Special">-          end</span>
+<span class="Identifier">+            else</span>
+<span class="Identifier">+              xml.send(note['type'], att) {</span>
+<span class="Identifier">+                sanitize_mixed_content(content, xml, fragments,ASpaceExport::Utils.include_p?(note['type']))</span>
+         }
+       end
+     end
+   end
+
+<span class="Special">-</span>
+   def serialize_container(inst, xml, fragments)
+<span class="Identifier">+          containers = []</span>
+     atts = {}
+<span class="Special">-</span>
+     sub = inst['sub_container']
+     top = sub['top_container']['_resolved']
+
+     atts[:id] = prefix_id(SecureRandom.hex)
+<span class="Identifier">+          parent_id = atts[:id]</span>
+     last_id = atts[:id]
+
+<span class="Special">-    atts[:type] = top['type']</span>
+<span class="Identifier">+          atts[:type] =  upcase_initial_char(top['type'])</span>
+<span class="Identifier">+</span>
+     text = top['indicator']
+
+<span class="Special">-    atts[:label] = I18n.t(&quot;enumerations.instance_instance_type.#{inst['instance_type']}&quot;,</span>
+<span class="Special">-                          :default =&gt; inst['instance_type'])</span>
+<span class="Identifier">+          atts[:label] = upcase_initial_char(I18n.t(&quot;enumerations.instance_instance_type.#{inst['instance_type']}&quot;,</span>
+<span class="Identifier">+            :default =&gt; inst['instance_type']))</span>
+     atts[:label] &lt;&lt; &quot; [#{top['barcode']}]&quot; if top['barcode']
+
+     if (cp = top['container_profile'])
+<span class="Statement">@@ -476,48 +380,32 @@</span>
+     end
+
+     xml.container(atts) {
+<span class="Identifier">+</span>
+       sanitize_mixed_content(text, xml, fragments)
+     }
+
+     (2..3).each do |n|
+       atts = {}
+<span class="Special">-</span>
+       next unless sub[&quot;type_#{n}&quot;]
+<span class="Special">-</span>
+<span class="Special">-      atts[:id] = prefix_id(SecureRandom.hex)</span>
+<span class="Special">-      atts[:parent] = last_id</span>
+<span class="Special">-      last_id = atts[:id]</span>
+<span class="Special">-</span>
+<span class="Special">-      atts[:type] = sub[&quot;type_#{n}&quot;]</span>
+<span class="Identifier">+              atts[:parent] = parent_id</span>
+<span class="Identifier">+              atts[:type] =  upcase_initial_char(sub[&quot;type_#{n}&quot;])</span>
+       text = sub[&quot;indicator_#{n}&quot;]
+
+       xml.container(atts) {
+         sanitize_mixed_content(text, xml, fragments)
+       }
+<span class="Special">-    end</span>
+<span class="Special">-  end</span>
+
+<span class="Special">-  def is_digital_object_published?(digital_object, file_version = nil)</span>
+<span class="Special">-    if !digital_object['publish']</span>
+<span class="Special">-      return false</span>
+<span class="Special">-    elsif !file_version.nil? and !file_version['publish']</span>
+<span class="Special">-      return false</span>
+<span class="Special">-    else</span>
+<span class="Special">-      return true</span>
+     end
+   end
+<span class="Special">-</span>
+   def serialize_digital_object(digital_object, xml, fragments)
+     return if digital_object[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished
+     return if digital_object[&quot;suppressed&quot;] === true
+
+<span class="Special">-    # ANW-285: Only serialize file versions that are published, unless include_unpublished flag is set</span>
+<span class="Special">-    file_versions_to_display = digital_object['file_versions'].select {|fv| fv['publish'] == true || @include_unpublished }</span>
+<span class="Special">-</span>
+<span class="Identifier">+            file_versions = digital_object['file_versions']</span>
+     title = digital_object['title']
+     date = digital_object['dates'][0] || {}
+
+<span class="Special">-    atts = {}</span>
+<span class="Identifier">+            atts = digital_object[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+
+     content = &quot;&quot;
+     content &lt;&lt; title if title
+<span class="Statement">@@ -530,42 +418,38 @@</span>
+         content &lt;&lt; &quot;-#{date['end']}&quot;
+       end
+     end
+<span class="Special">-    atts['xlink:title'] = digital_object['title'] if digital_object['title']</span>
+<span class="Identifier">+            atts[@xlink_namespace+':title'] = digital_object['title'] if digital_object['title']</span>
+
+
+<span class="Special">-    if file_versions_to_display.empty?</span>
+<span class="Special">-      atts['xlink:type'] = 'simple'</span>
+<span class="Special">-      atts['xlink:href'] = digital_object['digital_object_id']</span>
+<span class="Special">-      atts['xlink:actuate'] = 'onRequest'</span>
+<span class="Special">-      atts['xlink:show'] = 'new'</span>
+<span class="Special">-      atts['audience'] = 'internal' unless is_digital_object_published?(digital_object)</span>
+<span class="Identifier">+            if file_versions.empty?</span>
+<span class="Identifier">+              atts[@xlink_namespace+':type'] = 'simple'</span>
+<span class="Identifier">+              atts[@xlink_namespace+':href'] = digital_object['digital_object_id']</span>
+<span class="Identifier">+              atts[@xlink_namespace+':actuate'] = 'onRequest'</span>
+<span class="Identifier">+              atts[@xlink_namespace+':show'] = 'new'</span>
+       xml.dao(atts) {
+         xml.daodesc { sanitize_mixed_content(content, xml, fragments, true) } if content
+       }
+<span class="Special">-    elsif file_versions_to_display.length == 1</span>
+<span class="Special">-      file_version = file_versions_to_display.first</span>
+<span class="Identifier">+            elsif file_versions.length == 1</span>
+<span class="Identifier">+              use = file_versions.first['use_statement'] if file_versions.first['use_statement']</span>
+<span class="Identifier">+              atts[@xlink_namespace+':type'] = 'simple'</span>
+<span class="Identifier">+              atts[@xlink_namespace+':href'] = file_versions.first['file_uri'] || digital_object['digital_object_id']</span>
+<span class="Identifier">+              atts[@xlink_namespace+':actuate'] = file_versions.first['xlink_actuate_attribute'] || 'onRequest'</span>
+<span class="Identifier">+              atts[@xlink_namespace+':show'] = file_versions.first['xlink_show_attribute'] || 'new'</span>
+<span class="Identifier">+              atts[@xlink_namespace+':role'] = I18n.t(&quot;enumerations.file_version_use_statement.#{use}&quot;) if use</span>
+
+<span class="Special">-      atts['xlink:type'] = 'simple'</span>
+<span class="Special">-      atts['xlink:actuate'] = file_version['xlink_actuate_attribute'] || 'onRequest'</span>
+<span class="Special">-      atts['xlink:show'] = file_version['xlink_show_attribute'] || 'new'</span>
+<span class="Special">-      atts['xlink:role'] = file_version['use_statement'] if file_version['use_statement']</span>
+<span class="Special">-      atts['xlink:href'] = file_version['file_uri']</span>
+<span class="Special">-      atts['audience'] = 'internal' unless is_digital_object_published?(digital_object, file_version)</span>
+       xml.dao(atts) {
+         xml.daodesc { sanitize_mixed_content(content, xml, fragments, true) } if content
+       }
+     else
+<span class="Special">-      atts['xlink:type'] = 'extended'</span>
+<span class="Special">-      atts['audience'] = 'internal' unless is_digital_object_published?(digital_object)</span>
+<span class="Special">-      xml.daogrp( atts ) {</span>
+<span class="Identifier">+              xml.daogrp( atts.merge( { @xlink_namespace+':type' =&gt; 'extended'} ) ) {</span>
+         xml.daodesc { sanitize_mixed_content(content, xml, fragments, true) } if content
+<span class="Special">-        file_versions_to_display.each do |file_version|</span>
+<span class="Special">-          atts = {}</span>
+<span class="Special">-          atts['xlink:type'] = 'locator'</span>
+<span class="Special">-          atts['xlink:href'] = file_version['file_uri']</span>
+<span class="Special">-          atts['xlink:role'] = file_version['use_statement'] if file_version['use_statement']</span>
+<span class="Special">-          atts['xlink:title'] = file_version['caption'] if file_version['caption']</span>
+<span class="Special">-          atts['audience'] = 'internal' unless is_digital_object_published?(digital_object, file_version)</span>
+<span class="Identifier">+                file_versions.each do |file_version|</span>
+<span class="Identifier">+                  use = file_versions.first['use_statement'] if file_versions.first['use_statement']</span>
+<span class="Identifier">+                  atts[@xlink_namespace+':type'] = 'locator'</span>
+<span class="Identifier">+                  atts[@xlink_namespace+':href'] = file_version['file_uri'] || digital_object['digital_object_id']</span>
+<span class="Identifier">+                  atts[@xlink_namespace+':role'] = file_version['use_statement'] if file_version['use_statement']</span>
+<span class="Identifier">+                  atts[@xlink_namespace+':title'] = file_version['caption'] if file_version['caption']</span>
+<span class="Identifier">+                  atts['ns2:role'] = I18n.t(&quot;enumerations.file_version_use_statement.#{use}&quot;) if use</span>
+           xml.daoloc(atts)
+         end
+       }
+<span class="Statement">@@ -573,233 +457,79 @@</span>
+   end
+
+
+<span class="Special">-  def serialize_extents(obj, xml, fragments)</span>
+<span class="Special">-    if obj.extents.length</span>
+<span class="Special">-      obj.extents.each do |e|</span>
+<span class="Special">-        next if e[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-        audatt = e[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Special">-        xml.physdesc({:altrender =&gt; e['portion']}.merge(audatt)) {</span>
+<span class="Special">-          if e['number'] &amp;&amp; e['extent_type']</span>
+<span class="Special">-            xml.extent({:altrender =&gt; 'materialtype spaceoccupied'}) {</span>
+<span class="Special">-              sanitize_mixed_content(&quot;#{e['number']} #{I18n.t('enumerations.extent_extent_type.'+e['extent_type'], :default =&gt; e['extent_type'])}&quot;, xml, fragments)</span>
+<span class="Special">-            }</span>
+<span class="Special">-          end</span>
+<span class="Special">-          if e['container_summary']</span>
+<span class="Special">-            xml.extent({:altrender =&gt; 'carrier'}) {</span>
+<span class="Special">-              sanitize_mixed_content( e['container_summary'], xml, fragments)</span>
+<span class="Special">-            }</span>
+<span class="Special">-          end</span>
+<span class="Special">-          xml.physfacet { sanitize_mixed_content(e['physical_details'], xml, fragments) } if e['physical_details']</span>
+<span class="Special">-          xml.dimensions  { sanitize_mixed_content(e['dimensions'], xml, fragments) } if e['dimensions']</span>
+<span class="Special">-        }</span>
+<span class="Special">-      end</span>
+<span class="Special">-    end</span>
+<span class="Special">-  end</span>
+<span class="Identifier">+          def serialize_child(data, xml, fragments, c_depth = 1)</span>
+<span class="Identifier">+            begin</span>
+<span class="Identifier">+              return if data[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Identifier">+              return if data[&quot;supressed&quot;] === true</span>
+<span class="Identifier">+              tag_name = @use_numbered_c_tags ? :&quot;c#{c_depth.to_s.rjust(2, '0')}&quot; : :c</span>
+
+<span class="Identifier">+              atts = {:level =&gt; data.level, :otherlevel =&gt; data.other_level, :id =&gt; prefix_id(data.ref_id)}</span>
+
+<span class="Special">-  def serialize_dates(obj, xml, fragments)</span>
+<span class="Special">-    obj.archdesc_dates.each do |node_data|</span>
+<span class="Special">-      next if node_data[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-      audatt = node_data[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Special">-      xml.unitdate(node_data[:atts].merge(audatt)) {</span>
+<span class="Special">-        sanitize_mixed_content( node_data[:content], xml, fragments )</span>
+<span class="Special">-      }</span>
+<span class="Special">-    end</span>
+<span class="Identifier">+              if data.publish === false</span>
+<span class="Identifier">+                atts[:audience] = 'internal'</span>
+   end
+
+<span class="Identifier">+              atts.reject! {|k, v| v.nil?}</span>
+<span class="Identifier">+              xml.send(tag_name, atts) {</span>
+
+<span class="Special">-  def serialize_did_notes(data, xml, fragments)</span>
+<span class="Special">-    data.notes.each do |note|</span>
+<span class="Special">-      next if note[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-      next unless data.did_note_types.include?(note['type'])</span>
+<span class="Special">-</span>
+<span class="Special">-      audatt = note[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Special">-      content = ASpaceExport::Utils.extract_note_text(note, @include_unpublished)</span>
+<span class="Special">-</span>
+<span class="Special">-      att = { :id =&gt; prefix_id(note['persistent_id']) }.reject {|k, v| v.nil? || v.empty? || v == &quot;null&quot; }</span>
+<span class="Special">-      att ||= {}</span>
+<span class="Special">-</span>
+<span class="Special">-      case note['type']</span>
+<span class="Special">-      when 'dimensions', 'physfacet'</span>
+<span class="Special">-        att[:label] = note['label'] if note['label']</span>
+<span class="Special">-        xml.physdesc(audatt) {</span>
+<span class="Special">-          xml.send(note['type'], att) {</span>
+<span class="Special">-            sanitize_mixed_content( content, xml, fragments, ASpaceExport::Utils.include_p?(note['type']) )</span>
+<span class="Special">-          }</span>
+<span class="Special">-        }</span>
+<span class="Special">-      when 'physdesc'</span>
+<span class="Special">-        att[:label] = note['label'] if note['label']</span>
+<span class="Special">-        xml.send(note['type'], att.merge(audatt)) {</span>
+<span class="Special">-          sanitize_mixed_content(content, xml, fragments, ASpaceExport::Utils.include_p?(note['type']))</span>
+<span class="Special">-        }</span>
+<span class="Special">-      else</span>
+<span class="Special">-        xml.send(note['type'], att.merge(audatt)) {</span>
+<span class="Special">-          sanitize_mixed_content(content, xml, fragments, ASpaceExport::Utils.include_p?(note['type']))</span>
+<span class="Special">-        }</span>
+<span class="Special">-      end</span>
+<span class="Special">-    end</span>
+<span class="Identifier">+                xml.did {</span>
+<span class="Identifier">+                  if (val = data.title)</span>
+<span class="Identifier">+                    xml.unittitle {  sanitize_mixed_content( val,xml, fragments) }</span>
+   end
+
+<span class="Special">-  def serialize_languages(languages, xml, fragments)</span>
+<span class="Special">-    lm = []</span>
+<span class="Special">-    language_notes = languages.map {|l| l['notes']}.compact.reject {|e| e == [] }.flatten</span>
+<span class="Special">-    if !language_notes.empty?</span>
+<span class="Special">-      language_notes.each do |note|</span>
+<span class="Special">-        unless note[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-          audatt = note[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Special">-          content = ASpaceExport::Utils.extract_note_text(note, @include_unpublished)</span>
+<span class="Special">-</span>
+<span class="Special">-          att = { :id =&gt; prefix_id(note['persistent_id']) }.reject {|k, v| v.nil? || v.empty? || v == &quot;null&quot; }</span>
+<span class="Special">-          att ||= {}</span>
+<span class="Special">-</span>
+<span class="Special">-          xml.send(note['type'], att.merge(audatt)) {</span>
+<span class="Special">-            sanitize_mixed_content(content, xml, fragments, ASpaceExport::Utils.include_p?(note['type']))</span>
+<span class="Special">-          }</span>
+<span class="Special">-          lm &lt;&lt; note</span>
+<span class="Special">-        end</span>
+<span class="Special">-      end</span>
+<span class="Special">-      if lm == []</span>
+<span class="Special">-        languages = languages.map {|l| l['language_and_script']}.compact</span>
+<span class="Special">-        xml.langmaterial {</span>
+<span class="Special">-          languages.map {|language|</span>
+<span class="Special">-            punctuation = language.equal?(languages.last) ? '.' : ', '</span>
+<span class="Special">-            lang_translation = I18n.t(&quot;enumerations.language_iso639_2.#{language['language']}&quot;, :default =&gt; language['language'])</span>
+<span class="Special">-            if language['script']</span>
+<span class="Special">-              xml.language(:langcode =&gt; language['language'], :scriptcode =&gt; language['script']) {</span>
+<span class="Special">-                xml.text(lang_translation)</span>
+<span class="Special">-              }</span>
+<span class="Special">-            else</span>
+<span class="Special">-              xml.language(:langcode =&gt; language['language']) {</span>
+<span class="Special">-                xml.text(lang_translation)</span>
+<span class="Special">-              }</span>
+<span class="Special">-            end</span>
+<span class="Special">-            xml.text(punctuation)</span>
+<span class="Special">-          }</span>
+<span class="Special">-        }</span>
+<span class="Special">-      end</span>
+<span class="Special">-    # ANW-697: If no Language Text subrecords are available, the Language field translation values for each Language and Script subrecord should be exported, separated by commas, enclosed in &lt;language&gt; elements with associated @langcode and @scriptcode attribute values, and terminated by a period.</span>
+<span class="Special">-    else</span>
+<span class="Special">-      languages = languages.map {|l| l['language_and_script']}.compact</span>
+<span class="Special">-      if !languages.empty?</span>
+<span class="Special">-        xml.langmaterial {</span>
+<span class="Special">-          languages.map {|language|</span>
+<span class="Special">-            punctuation = language.equal?(languages.last) ? '.' : ', '</span>
+<span class="Special">-            lang_translation = I18n.t(&quot;enumerations.language_iso639_2.#{language['language']}&quot;, :default =&gt; language['language'])</span>
+<span class="Special">-            if language['script']</span>
+<span class="Special">-              xml.language(:langcode =&gt; language['language'], :scriptcode =&gt; language['script']) {</span>
+<span class="Special">-                xml.text(lang_translation)</span>
+<span class="Special">-              }</span>
+<span class="Special">-            else</span>
+<span class="Special">-              xml.language(:langcode =&gt; language['language']) {</span>
+<span class="Special">-                xml.text(lang_translation)</span>
+<span class="Special">-              }</span>
+<span class="Special">-            end</span>
+<span class="Special">-            xml.text(punctuation)</span>
+<span class="Special">-          }</span>
+<span class="Special">-        }</span>
+<span class="Identifier">+                  if !data.component_id.nil? &amp;&amp; !data.component_id.empty?</span>
+<span class="Identifier">+                    xml.unitid data.component_id</span>
+       end
+<span class="Identifier">+</span>
+<span class="Identifier">+                  if @include_unpublished</span>
+<span class="Identifier">+                    data.external_ids.each do |exid|</span>
+<span class="Identifier">+                      xml.unitid  ({ &quot;audience&quot; =&gt; &quot;internal&quot;,  &quot;type&quot; =&gt; exid['source'], &quot;identifier&quot; =&gt; exid['external_id']}) { xml.text exid['external_id']}</span>
+     end
+   end
+
+<span class="Special">-  def serialize_note_content(note, xml, fragments)</span>
+<span class="Special">-    return if note[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-    audatt = note[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Special">-    content = note[&quot;content&quot;]</span>
+<span class="Identifier">+                  serialize_origination(data, xml, fragments)</span>
+<span class="Identifier">+                  serialize_extents(data, xml, fragments)</span>
+<span class="Identifier">+                  serialize_dates(data, xml, fragments)</span>
+<span class="Identifier">+                  serialize_did_notes(data, xml, fragments)</span>
+
+<span class="Special">-    atts = {:id =&gt; prefix_id(note['persistent_id']) }.reject {|k, v| v.nil? || v.empty? || v == &quot;null&quot; }.merge(audatt)</span>
+<span class="Identifier">+                  EADSerializer.run_serialize_step(data, xml, fragments, :did)</span>
+
+<span class="Special">-    head_text = note['label'] ? note['label'] : I18n.t(&quot;enumerations._note_types.#{note['type']}&quot;, :default =&gt; note['type'])</span>
+<span class="Special">-    content, head_text = extract_head_text(content, head_text)</span>
+<span class="Special">-    xml.send(note['type'], atts) {</span>
+<span class="Special">-      xml.head { sanitize_mixed_content(head_text, xml, fragments) } unless ASpaceExport::Utils.headless_note?(note['type'], content )</span>
+<span class="Special">-      sanitize_mixed_content(content, xml, fragments, ASpaceExport::Utils.include_p?(note['type']) ) if content</span>
+<span class="Special">-      if note['subnotes']</span>
+<span class="Special">-        serialize_subnotes(note['subnotes'], xml, fragments, ASpaceExport::Utils.include_p?(note['type']))</span>
+<span class="Identifier">+                  data.instances_with_sub_containers.each do |instance|</span>
+<span class="Identifier">+                    serialize_container(instance, xml, @fragments)</span>
+       end
+     }
+<span class="Special">-  end</span>
+<span class="Special">-</span>
+<span class="Special">-</span>
+<span class="Special">-  def serialize_nondid_notes(data, xml, fragments)</span>
+<span class="Special">-    data.notes.each do |note|</span>
+<span class="Special">-      next if note[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-      next if note['internal']</span>
+<span class="Special">-      next if note['type'].nil?</span>
+<span class="Special">-      next unless data.archdesc_note_types.include?(note['type'])</span>
+<span class="Special">-      audatt = note[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Special">-      if note['type'] == 'legalstatus'</span>
+<span class="Special">-        xml.accessrestrict(audatt) {</span>
+<span class="Special">-          serialize_note_content(note, xml, fragments)</span>
+<span class="Special">-        }</span>
+<span class="Special">-      else</span>
+<span class="Special">-        serialize_note_content(note, xml, fragments)</span>
+<span class="Special">-      end</span>
+<span class="Identifier">+                if @include_daos</span>
+<span class="Identifier">+                  data.instances_with_digital_objects.each do |instance|</span>
+<span class="Identifier">+                    serialize_digital_object(instance['digital_object']['_resolved'], xml, fragments)</span>
+     end
+   end
+<span class="Identifier">+                serialize_nondid_notes(data, xml, fragments)</span>
+
+<span class="Identifier">+                serialize_bibliographies(data, xml, fragments)</span>
+
+<span class="Special">-  def serialize_bibliographies(data, xml, fragments)</span>
+<span class="Special">-    data.bibliographies.each do |note|</span>
+<span class="Special">-      next if note[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-      content = ASpaceExport::Utils.extract_note_text(note, @include_unpublished)</span>
+<span class="Special">-      note_type = note[&quot;type&quot;] ? note[&quot;type&quot;] : &quot;bibliography&quot;</span>
+<span class="Special">-      head_text = note['label'] ? note['label'] : I18n.t(&quot;enumerations._note_types.#{note_type}&quot;, :default =&gt; note_type )</span>
+<span class="Special">-      audatt = note[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Special">-</span>
+<span class="Special">-      atts = {:id =&gt; prefix_id(note['persistent_id']) }.reject {|k, v| v.nil? || v.empty? || v == &quot;null&quot; }.merge(audatt)</span>
+<span class="Identifier">+                serialize_indexes(data, xml, fragments)</span>
+
+<span class="Special">-      xml.bibliography(atts) {</span>
+<span class="Special">-        xml.head { sanitize_mixed_content(head_text, xml, fragments) }</span>
+<span class="Special">-        sanitize_mixed_content( content, xml, fragments, true)</span>
+<span class="Special">-        note['items'].each do |item|</span>
+<span class="Special">-          xml.bibref { sanitize_mixed_content( item, xml, fragments) } unless item.empty?</span>
+<span class="Special">-        end</span>
+<span class="Special">-      }</span>
+<span class="Special">-    end</span>
+<span class="Special">-  end</span>
+<span class="Identifier">+                serialize_controlaccess(data, xml, fragments)</span>
+
+<span class="Identifier">+                EADSerializer.run_serialize_step(data, xml, fragments, :archdesc)</span>
+
+<span class="Special">-  def serialize_indexes(data, xml, fragments)</span>
+<span class="Special">-    data.indexes.each do |note|</span>
+<span class="Special">-      next if note[&quot;publish&quot;] === false &amp;&amp; !@include_unpublished</span>
+<span class="Special">-      audatt = note[&quot;publish&quot;] === false ? {:audience =&gt; 'internal'} : {}</span>
+<span class="Special">-      content = ASpaceExport::Utils.extract_note_text(note, @include_unpublished)</span>
+<span class="Special">-      head_text = nil</span>
+<span class="Special">-      if note['label']</span>
+<span class="Special">-        head_text = note['label']</span>
+<span class="Special">-      elsif note['type']</span>
+<span class="Special">-        head_text = I18n.t(&quot;enumerations._note_types.#{note['type']}&quot;, :default =&gt; note['type'])</span>
+<span class="Special">-      end</span>
+<span class="Special">-      atts = {:id =&gt; prefix_id(note[&quot;persistent_id&quot;]) }.reject {|k, v| v.nil? || v.empty? || v == &quot;null&quot; }.merge(audatt)</span>
+<span class="Special">-</span>
+<span class="Special">-      content, head_text = extract_head_text(content, head_text)</span>
+<span class="Special">-      xml.index(atts) {</span>
+<span class="Special">-        xml.head { sanitize_mixed_content(head_text, xml, fragments ) } unless head_text.nil?</span>
+<span class="Special">-        sanitize_mixed_content(content, xml, fragments, true)</span>
+<span class="Special">-        note['items'].each do |item|</span>
+<span class="Special">-          next unless (node_name = data.index_item_type_map[item['type']])</span>
+<span class="Special">-          xml.indexentry {</span>
+<span class="Special">-            atts = item['reference'] ? {:target =&gt; prefix_id( item['reference']) } : {}</span>
+<span class="Special">-            if (val = item['value'])</span>
+<span class="Special">-              xml.send(node_name) { sanitize_mixed_content(val, xml, fragments )}</span>
+<span class="Special">-            end</span>
+<span class="Special">-            if (val = item['reference_text'])</span>
+<span class="Special">-              xml.ref(atts) {</span>
+<span class="Special">-                sanitize_mixed_content( val, xml, fragments)</span>
+<span class="Special">-              }</span>
+<span class="Special">-            end</span>
+<span class="Identifier">+                data.children_indexes.each do |i|</span>
+<span class="Identifier">+                  xml.text(</span>
+<span class="Identifier">+                    @stream_handler.buffer {|xml, new_fragments|</span>
+<span class="Identifier">+                      serialize_child(data.get_child(i), xml, new_fragments, c_depth + 1)</span>
+           }
+<span class="Identifier">+                  )</span>
+         end
+       }
+<span class="Identifier">+            rescue =&gt; e</span>
+<span class="Identifier">+              xml.text &quot;ASPACE EXPORT ERROR : YOU HAVE A PROBLEM WITH YOUR EXPORT OF ARCHIVAL OBJECTS. THE FOLLOWING INFORMATION MAY HELP:\n</span>
+<span class="Identifier">+</span>
+<span class="Identifier">+              MESSAGE: #{e.message.inspect}  \n</span>
+<span class="Identifier">+              TRACE: #{e.backtrace.inspect} \n &quot;</span>
+     end
+   end
+
+<span class="Special">-</span>
+   def serialize_eadheader(data, xml, fragments)
+<span class="Special">-    ark_url = AppConfig[:arks_enabled] ? ArkName::get_ark_url(data.id, :resource) : nil</span>
+<span class="Special">-</span>
+<span class="Special">-    eadid_url = ark_url.nil? ? data.ead_location : ark_url</span>
+<span class="Special">-</span>
+     eadheader_atts = {:findaidstatus =&gt; data.finding_aid_status,
+                       :repositoryencoding =&gt; &quot;iso15511&quot;,
+                       :countryencoding =&gt; &quot;iso3166-1&quot;,
+<span class="Statement">@@ -809,7 +539,7 @@</span>
+     xml.eadheader(eadheader_atts) {
+
+       eadid_atts = {:countrycode =&gt; data.repo.country,
+<span class="Special">-              :url =&gt; eadid_url,</span>
+<span class="Identifier">+                  :url =&gt; data.ead_location,</span>
+               :mainagencycode =&gt; data.mainagencycode}.reject {|k, v| v.nil? || v.empty? || v == &quot;null&quot; }
+
+       xml.eadid(eadid_atts) {
+<span class="Statement">@@ -827,7 +557,11 @@</span>
+           xml.titleproper(&quot;type&quot; =&gt; &quot;filing&quot;) { sanitize_mixed_content(data.finding_aid_filing_title, xml, fragments)} unless data.finding_aid_filing_title.nil?
+           xml.titleproper { sanitize_mixed_content(titleproper, xml, fragments) }
+           xml.subtitle {  sanitize_mixed_content(data.finding_aid_subtitle, xml, fragments) } unless data.finding_aid_subtitle.nil?
+<span class="Special">-          xml.author { sanitize_mixed_content(data.finding_aid_author, xml, fragments) }  unless data.finding_aid_author.nil?</span>
+<span class="Identifier">+                      if data.finding_aid_author</span>
+<span class="Identifier">+                        author = data.finding_aid_author</span>
+<span class="Identifier">+                        author = customize_ead_data(&quot;Collection processed by &quot;,author)</span>
+<span class="Identifier">+                        xml.author { sanitize_mixed_content(author, xml, fragments) }</span>
+<span class="Identifier">+                      end</span>
+           xml.sponsor { sanitize_mixed_content( data.finding_aid_sponsor, xml, fragments) } unless data.finding_aid_sponsor.nil?
+
+         }
+<span class="Statement">@@ -843,45 +577,21 @@</span>
+
+           if data.repo.image_url
+             xml.p ( { &quot;id&quot; =&gt; &quot;logostmt&quot; } ) {
+<span class="Special">-                            xml.extref ({&quot;xlink:href&quot; =&gt; data.repo.image_url,</span>
+<span class="Special">-                                        &quot;xlink:actuate&quot; =&gt; &quot;onLoad&quot;,</span>
+<span class="Special">-                                        &quot;xlink:show&quot; =&gt; &quot;embed&quot;,</span>
+<span class="Special">-                                        &quot;xlink:type&quot; =&gt; &quot;simple&quot;</span>
+<span class="Identifier">+                          xml.extref ({&quot;ns2:href&quot; =&gt; data.repo.image_url,</span>
+<span class="Identifier">+                            &quot;ns2:actuate&quot; =&gt; &quot;onLoad&quot;,</span>
+<span class="Identifier">+                            &quot;ns2:show&quot; =&gt; &quot;embed&quot;,</span>
+<span class="Identifier">+                            &quot;ns2:type&quot; =&gt; &quot;simple&quot;</span>
+                                         })
+                           }
+           end
+<span class="Special">-          if (data.finding_aid_date)</span>
+<span class="Special">-            xml.p {</span>
+<span class="Special">-                    val = data.finding_aid_date</span>
+<span class="Special">-                    xml.date { sanitize_mixed_content( val, xml, fragments) }</span>
+<span class="Special">-                  }</span>
+<span class="Special">-          end</span>
+<span class="Special">-</span>
+           unless data.addresslines.empty?
+             xml.address {
+               data.addresslines.each do |line|
+                 xml.addressline { sanitize_mixed_content( line, xml, fragments) }
+               end
+<span class="Special">-              if data.repo.url</span>
+<span class="Special">-                xml.addressline ( &quot;URL: &quot; ) {</span>
+<span class="Special">-                   xml.extptr ( {</span>
+<span class="Special">-                           &quot;xlink:href&quot; =&gt; data.repo.url,</span>
+<span class="Special">-                           &quot;xlink:title&quot; =&gt; data.repo.url,</span>
+<span class="Special">-                           &quot;xlink:type&quot; =&gt; &quot;simple&quot;,</span>
+<span class="Special">-                           &quot;xlink:show&quot; =&gt; &quot;new&quot;</span>
+<span class="Special">-                           } )</span>
+                  }
+               end
+             }
+<span class="Special">-          end</span>
+<span class="Special">-</span>
+<span class="Special">-          data.metadata_rights_declarations.each do |mrd|</span>
+<span class="Special">-            if mrd[&quot;license&quot;]</span>
+<span class="Special">-              license_translation = I18n.t(&quot;enumerations.metadata_license.#{mrd['license']}&quot;, :default =&gt; mrd['license'])</span>
+<span class="Special">-              xml.p (license_translation)</span>
+<span class="Special">-            end</span>
+<span class="Special">-          end</span>
+<span class="Special">-        }</span>
+
+         if (data.finding_aid_series_statement)
+           val = data.finding_aid_series_statement
+<span class="Statement">@@ -897,21 +607,13 @@</span>
+       }
+
+       xml.profiledesc {
+<span class="Special">-        creation = &quot;This finding aid was produced using ArchivesSpace on &lt;date&gt;#{Time.now}&lt;/date&gt;.&quot;</span>
+<span class="Identifier">+                      # generates time as 2016-03-16T11:56-0400Z and the</span>
+<span class="Identifier">+                      # gsub removes the 'Z'</span>
+<span class="Identifier">+                      creation = &quot;This finding aid was produced using ArchivesSpace &lt;date&gt;#{Time.now.utc.iso8601.gsub!('Z','')}&lt;/date&gt;&quot;</span>
+         xml.creation { sanitize_mixed_content( creation, xml, fragments) }
+
+         if (val = data.finding_aid_language_note)
+           xml.langusage (fragments &lt;&lt; val)
+<span class="Special">-        else</span>
+<span class="Special">-          xml.langusage() {</span>
+<span class="Special">-            xml.text(I18n.t(&quot;resource.finding_aid_langusage_label&quot;))</span>
+<span class="Special">-            xml.language({langcode: &quot;#{data.finding_aid_language}&quot;, :scriptcode =&gt; &quot;#{data.finding_aid_script}&quot;}) {</span>
+<span class="Special">-              xml.text(I18n.t(&quot;enumerations.language_iso639_2.#{data.finding_aid_language}&quot;))</span>
+<span class="Special">-              xml.text(&quot;, &quot;)</span>
+<span class="Special">-              xml.text(I18n.t(&quot;enumerations.script_iso15924.#{data.finding_aid_script}&quot;))</span>
+<span class="Special">-              xml.text(&quot; #{I18n.t(&quot;language_and_script.script&quot;).downcase}&quot;)}</span>
+<span class="Special">-            xml.text(&quot;.&quot;)</span>
+<span class="Special">-          }</span>
+         end
+
+         if (val = data.descrules)
+<span class="Statement">@@ -919,14 +621,13 @@</span>
+         end
+       }
+
+<span class="Special">-      export_rs = @include_unpublished ? data.revision_statements : data.revision_statements.reject { |rs| !rs['publish'] }</span>
+<span class="Special">-      if export_rs.length &gt; 0</span>
+<span class="Identifier">+                    if data.revision_statements.length &gt; 0</span>
+         xml.revisiondesc {
+<span class="Special">-          export_rs.each do |rs|</span>
+<span class="Identifier">+                        data.revision_statements.each do |rs|</span>
+             if rs['description'] &amp;&amp; rs['description'].strip.start_with?('&lt;')
+               xml.text (fragments &lt;&lt; rs['description'] )
+             else
+<span class="Special">-              xml.change(rs['publish'] ? nil : {:audience =&gt; 'internal'}) {</span>
+<span class="Identifier">+                            xml.change {</span>
+                 rev_date = rs['date'] ? rs['date'] : &quot;&quot;
+                 xml.date (fragments &lt;&lt;  rev_date )
+                 xml.item (fragments &lt;&lt; rs['description']) if rs['description']
+</pre>
+</body>
+</html>
+<!-- vim: set foldmethod=manual : -->

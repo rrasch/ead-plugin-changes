@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>~/Untitled.html</title>
+<meta name="Generator" content="Vim/8.2">
+<meta name="plugin-version" content="vim8.1_v2">
+<meta name="syntax" content="diff">
+<meta name="settings" content="use_css,pre_wrap,no_foldcolumn,prevent_copy=,use_input_for_pc=fallback">
+<meta name="colorscheme" content="none">
+<style>
+<!--
+pre { white-space: pre-wrap; font-family: monospace; color: #000000; background-color: #ffffff; }
+body { font-family: monospace; color: #000000; background-color: #ffffff; }
+* { font-size: 1em; }
+.Type { color: #008000; }
+.Special { color: #c000c0; }
+.Identifier { color: #008080; }
+.Statement { color: #804000; }
+-->
+</style>
+</head>
+<body>
+<pre id='vimCodeElement'>
+<span class="Type">--- addresslines_orig	2021-07-29 12:01:34.669232521 -0400</span>
+<span class="Type">+++ addresslines_nyu	2021-07-29 11:59:20.408109226 -0400</span>
+<span class="Statement">@@ -5,35 +5,26 @@</span>
+     contact = agent.agent_contacts[0]
+
+     data = []
+<span class="Identifier">+</span>
+<span class="Identifier">+    data &lt;&lt; contact['name'] if contact['name']</span>
+     (1..3).each do |i|
+<span class="Identifier">+      if contact[&quot;address_#{i}&quot;]</span>
+       data &lt;&lt; contact[&quot;address_#{i}&quot;]
+     end
+<span class="Identifier">+    end</span>
+
+     line = &quot;&quot;
+<span class="Special">-    line += %w(city region).map {|k| contact[k] }.compact.join(', ')</span>
+<span class="Special">-    line += &quot; #{contact['post_code']}&quot;</span>
+<span class="Identifier">+</span>
+<span class="Identifier">+    line += %w(city region).map{|k| contact[k] if contact[k] }.compact.join(', ')</span>
+<span class="Identifier">+    line += &quot; #{contact['post_code']}&quot; if contact['post_code']</span>
+     line.strip!
+
+     data &lt;&lt; line unless line.empty?
+<span class="Special">-</span>
+<span class="Special">-    if (telephones = contact['telephones'])</span>
+<span class="Special">-      telephones.each do |t|</span>
+<span class="Special">-        phone = ''</span>
+<span class="Special">-        if t['number_type'].nil?</span>
+<span class="Special">-          phone += &quot;#{I18n.t('repository.telephone')}: &quot;</span>
+<span class="Special">-        else</span>
+<span class="Special">-          phone += &quot;#{t['number_type'].capitalize} #{I18n.t('telephone.number')}: &quot;</span>
+<span class="Special">-        end</span>
+<span class="Special">-        phone += &quot;#{t['number']}&quot;</span>
+<span class="Special">-        phone += &quot; (#{I18n.t('repository.telephone_ext')}: #{t['ext']})&quot; if t['ext']</span>
+<span class="Special">-</span>
+<span class="Special">-        data &lt;&lt; phone unless phone.empty?</span>
+<span class="Special">-      end</span>
+<span class="Special">-    end</span>
+<span class="Special">-</span>
+<span class="Identifier">+    data &lt;&lt; contact['telephones'][0]['number'] if contact['telephones'].size &gt; 0</span>
+     data &lt;&lt; contact['email'] if contact['email']
+
+     data.compact!
+
+     data
+<span class="Identifier">+</span>
+   end
+</pre>
+</body>
+</html>
+<!-- vim: set foldmethod=manual : -->
