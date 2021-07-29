@@ -1,0 +1,47 @@
+--- addresslines_orig	2021-07-29 12:01:34.669232521 -0400
++++ addresslines_nyu	2021-07-29 11:59:20.408109226 -0400
+@@ -5,35 +5,26 @@
+     contact = agent.agent_contacts[0]
+ 
+     data = []
++
++    data << contact['name'] if contact['name']
+     (1..3).each do |i|
++      if contact["address_#{i}"]
+       data << contact["address_#{i}"]
+     end
++    end
+ 
+     line = ""
+-    line += %w(city region).map {|k| contact[k] }.compact.join(', ')
+-    line += " #{contact['post_code']}"
++
++    line += %w(city region).map{|k| contact[k] if contact[k] }.compact.join(', ')
++    line += " #{contact['post_code']}" if contact['post_code']
+     line.strip!
+ 
+     data << line unless line.empty?
+-
+-    if (telephones = contact['telephones'])
+-      telephones.each do |t|
+-        phone = ''
+-        if t['number_type'].nil?
+-          phone += "#{I18n.t('repository.telephone')}: "
+-        else
+-          phone += "#{t['number_type'].capitalize} #{I18n.t('telephone.number')}: "
+-        end
+-        phone += "#{t['number']}"
+-        phone += " (#{I18n.t('repository.telephone_ext')}: #{t['ext']})" if t['ext']
+-
+-        data << phone unless phone.empty?
+-      end
+-    end
+-
++    data << contact['telephones'][0]['number'] if contact['telephones'].size > 0
+     data << contact['email'] if contact['email']
+ 
+     data.compact!
+ 
+     data
++
+   end

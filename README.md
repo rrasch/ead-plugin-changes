@@ -26,9 +26,9 @@ https://archivesspace.atlassian.net/wiki/spaces/ADC/blog/2015/03/15/18088140/Cus
  
 The diffs can be found here:
 
-[EAD Converted diff](ead-diff.html)
+[EAD Converter diff](ead.diff)
 
-[Address lines diff](addresslines-diff.html) 
+[Address lines diff](addresslines.diff) 
 
 
 ## Changes ##
