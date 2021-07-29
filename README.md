@@ -26,7 +26,8 @@ https://archivesspace.atlassian.net/wiki/spaces/ADC/blog/2015/03/15/18088140/Cus
  
 The diffs can be found here:
 
-[EAD Converted diff](ead-diff.html) 
+[EAD Converted diff](ead-diff.html)
+
 [Address lines diff](addresslines-diff.html) 
 
 
@@ -38,7 +39,6 @@ The diffs can be found here:
     - Don't add telephone info
 - removed id attribute from container element if container contains a parent attribute
 - upcasing initial string in label type for container
-- provisional commit
 - fixed thumbnails. Moved dao elements outside of did element
 - fixed audatt references
 - fixed internal audience for dao, I believe
